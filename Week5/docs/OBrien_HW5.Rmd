@@ -1,0 +1,354 @@
+---
+title: "OBrien_HW5"
+author: "Orla O'Brien"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load in libraries
+library(Sleuth3)
+library(Sleuth2)
+library(tidyverse)
+library(multcomp)
+library(agricolae)
+library(kableExtra)
+library(pander)
+library(broom)
+
+```
+
+### Question 6.24 A Biological basis for homosexuality
+
+
+Read in the data.
+```{r}
+dat24 <- Sleuth3::ex0624
+head(dat24)
+```
+
+Lets look at a graph of the data. I decided to take out Group 4 because it was only one data point and I thought it was not very helpful.
+
+```{r}
+dat24$Group <- factor(dat24$Group, levels = c("Group1", "Group2", "Group3", "Group4", "Group5"))
+
+dat24 <- dat24 %>%
+  filter(Group!="Group4")
+
+dat24 %>%
+  ggplot(aes(Group, Volume, fill=Group)) +
+  geom_boxplot() +
+  theme_bw() +
+  ylab("INAH3 Volume") +
+  xlab("") +
+  theme(legend.position="none")
+```
+
+We can run an ANOVA and look at the residuals to check them.
+
+```{r}
+
+myAov24  <- aov(Volume ~ Group, data=dat24) 
+plot(myAov24, which=1) 
+```
+
+
+I think that the data would benefit from a log transformation, so let's look at it again.
+```{r}
+
+dat24 %>%
+  ggplot(aes(Group, log(Volume), fill=Group)) +
+  geom_boxplot() +
+  theme_bw() +
+  ylab("Log of INAH3 Volume") +
+  xlab("") +
+  theme(legend.position="none")
+```
+
+The boxplot looks better, how about the residuals?
+
+
+```{r}
+myAov24  <- aov(log(Volume) ~ Group, data=dat24) 
+plot(myAov24, which=1)  
+ 
+```
+The residuals look much better now.
+
+Here is the summary of the ANOVA.
+```{r}
+summary(myAov24)
+```
+It shows that there is moderate evidence of a difference between at least one of the groups. 
+
+To answer the specific questions, I can look at a linear contrast between specific groups. Since I have a priori hypotheses, I don't need to run multiple comparisons with corrections.
+
+#### Do heterosexual males tend to differ from homosexual males in the volume of INAH3?
+
+First we want to see if cause of death matters, because if not, we can combine Groups 1 and 2.
+
+```{r}
+mycontrast4 <- rbind(c(-1, 1, 0, 0)) # this is to test if cause of death matters
+
+myComparisons4 <- glht(myAov24, linfct = mycontrast4)
+summary(myComparisons4)
+pval4 <- .000083
+```
+This shows that there is a difference between Groups 1 and 2, so I'll want to only use Group 1 to compare to Group 3.
+
+```{r}
+myContrast <- rbind(c(1, 0, -1, 0))
+myComparisons <- glht(myAov24, linfct = myContrast)
+summary(myComparisons)
+
+confint(myComparisons,level=.95)
+pval <- .000000719
+est<- exp(5.4084)
+UCI <- exp(7.2399)
+LCI <- exp(3.5769)
+
+```
+
+
+#### Do heterosexual males tend to differ from heterosexual females?
+
+```{r}
+
+myContrast2 <- rbind(c(0, 1, 0, -1))
+myComparisons2 <- glht(myAov24, linfct = myContrast2)
+summary(myComparisons2)
+
+confint(myComparisons2,level=.95)
+pval2 <- .0919
+est2<- exp(1.0101)
+UCI2 <- exp(2.1929)
+LCI2 <- exp(-0.1727)
+```
+
+#### Do heterosexual females differ from homosexual males?
+
+```{r}
+myContrast3 <- rbind(c(0, 0, -1, 1))
+myComparisons3 <- glht(myAov24, linfct = myContrast3)
+summary(myComparisons3)
+
+confint(myComparisons3,level=.95)
+pval3 <- .626
+est3<- exp(0.2627)
+LCI3 <- exp(-0.8227)
+UCI3 <- exp(1.3481)
+```
+
+```{r}
+
+
+conc1 <- c(pval, est, LCI, UCI)
+conc2 <- c(pval2, est2, LCI2, UCI2)
+conc3 <- c(pval3, est3, LCI3, UCI3)
+
+conc.table <- rbind(conc1, conc2, conc3)
+rownames(conc.table) <- c("Group 1 vs 3", "Group 2 vs 5", "Group 3 vs 5")
+colnames(conc.table) <- c("P-value", "Estimate", "Lower Confidence Interval", "Upper Confidence Interval")
+
+```
+
+
+#### Analyze the data and write a statistical report including summary of findings, graphical display, and details of the methods used. Also describe the limitations of inferences that can be made. 
+
+#### Conclusions
+
+The question asks us to look at the difference in INAH3 volumes of several different groups of deceased patients (Figure 1). Before comparing the groups by sexual orientation, we first have to decide if cause of death affects INAH3 volume. There is only one female measured that died from AIDS, so this data point is not helpful and was discarded. A comparison of groups 1 and 2 shows that there is a difference in volume between heterosexual men who died of AIDS vs something else (p-value=`r pval4`), so we will have to keep this in mind for the subsequent comparisons. A comparison of Groups 1 and 3 shows that there is strong evidence that INAH3 volume is different between hetero and homosexual males who died of AIDS. A comparison between Groups 2 and 5 shows that there is strong evidence that INAH3 volume is different between heterosexual men and women who did not die from AIDS. A comparison between Groups 3 and 5 shows that there is no evidence that there is a difference between INAH3 volume in homosexual men who died of AIDs, and heterosexual women who did not die of AIDs. The power of inference is limited here by the data provided: we can only tell if cause of death affects volume for heterosexual men, and this affects our ability to make comparisons between groups. In addition, there are no data on homosexual women, which limits our ability to make inferences about sexual orientation overall.
+
+```{r}
+
+
+ kbl(conc.table, booktabs = T, longtable = T, caption = "Table 1. Statistical comparison of INAH3 Volumes", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 11)
+
+dat24 %>%
+  ggplot(aes(Group, log(Volume), fill=Group)) +
+  geom_boxplot() +
+  theme_bw() +
+  ylab("Log of INAH3 Volume") +
+  xlab("") +
+  theme(legend.position="none") +
+  labs(title = "Figure 1. Comparison of Log Volume of INAH3 in Patients of Different Sexual Orientation")
+```
+
+### Question 7.28 Brain Activity in Violin and String Players 
+
+Read in the data.
+```{r}
+dat28 <- Sleuth3::ex0728
+head(dat28)
+
+dat28 <- dat28 %>%
+  mutate(Musician = case_when(Years==0 ~ "N", Years!=0 ~"Y"))
+```
+
+Look at the data.
+```{r}
+dat28 %>%
+   ggplot(aes(Musician, Activity, fill=Musician)) +
+   geom_boxplot() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ylab("Neuron Activity Index")
+
+
+dat28 %>%
+  ggplot(aes(Activity, fill=Musician)) +
+  geom_histogram(position="dodge")
+```
+
+#### Is the neuron activity different in the stringed musicians and the controls?
+
+It looks to me that there is unequal variance between the two groups. Because of this, and because there are only two groups, I'm going to a Welch's T-test.
+
+```{r}
+strng_player <- filter(dat28, Musician=="Y")
+not_player <- filter(dat28, Musician=="N")
+
+t.test(strng_player$Activity, not_player$Activity)
+```
+
+
+
+#### Is the amount of activity associated with the number of years the individual has been playing the instrument?
+
+For this, I'll do a simple linear model. Since the question is only relevant to individuals who play an instrument, I'll ignore those who do not play.
+```{r}
+dat28 %>%
+  filter(Years!=0) %>%
+  ggplot(aes(Activity, Years)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Neuron Activity Index") +
+  ylab("Years Playing a Stringed Instrument")
+```
+
+Now I'll run and plot my linear model
+```{r}
+myLM <- lm(Activity~Years, data=(filter(dat28, Years!=0)))
+plot(Activity~Years, data=(filter(dat28, Years!=0)))
+abline(myLM)
+
+
+summary(myLM)
+```
+
+Conclusions:
+The Welch's T-test shows convincing evidence that there is a difference in neuron activity between individuals who play stringed instruments, and individuals who do not (p-value = 7.2e-05, df = 11, 95% confidence interval 8.0 - 17.2). Furthermore, a linear model shows that there is moderate evidence (p-value = 0.0086) of a positive trend in neuron activity as years of playing increases. The linear model predicts that the neuronal activity index increases by 0.87 for every additional year an individual has played an instrument.
+
+
+#### Question 6.21 Sleuth 2 Failure Time of Bearings ####
+
+```{r}
+dat21 <- Sleuth2::ex0621
+head(dat21)
+```
+
+```{r}
+dat21 %>%
+  ggplot(aes(Compound, Time, fill=Compound)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none") +
+  ylab("Time to failure (Millions of cycles)")
+```
+
+#### Which compounds tend to differ in their performance from the others? Analyze the data and write a report with statistical findings, graph, and details describing methods.
+
+First lets see if any of the compounds are different from each other. 
+
+```{r}
+aov21 <- aov(Time ~ Compound, data=dat21)
+
+plot(aov21, which=1) 
+
+summary(aov21) 
+```
+
+The residuals for the ANOVA look good. 
+
+```{r}
+q <- TukeyHSD(aov21)
+pander(q)
+plot(q)
+```
+
+An ANOVA shows convincing evidence (p-value=0.002) that there is a difference between at least one of the five groups. To discover which groups are different from each other, we can use a Tukey HSD (Honestly Significant Difference). I chose this test because we are doing multiple comparisons of means, without any *a priori* hypothesis for what might be different. The Tukey test shows that there is convincing evidence for a difference between Compound 2 and 5 (p-value = 0.0008) and that there is suggestive evidence for a difference between Compound 3 and 5 (p-value = 0.03).
+
+
+
+
+#### Master Problem Analyze Case 5.1 using agricolae::duncan.test
+
+Load in the data
+
+```{r}
+masterdat <- Sleuth3::case0501
+head(masterdat)
+```
+
+
+First I'll analyze using the duncan multiple comparison test.
+```{r}
+
+masterAov <-aov(Lifetime ~ Diet, data = masterdat) 
+plot(masterAov, which=1)
+summary(masterAov)
+
+dplot <- duncan.test(masterAov, "Diet")
+plot(dplot, variation = "IQR")
+
+
+dtest <- duncan.test(masterAov,"Diet",alpha=0.05,console=TRUE)
+
+dtest
+
+
+```
+
+The plot and the group comparisons show that lopro, N/N85, and NP are all different from each other and from N/R40, R/R50, and N/R50. N/R40 is different from N/R50, but neither of these is different from R/R50.
+
+I couldn't find a way to see the p-values using this package so I looked it up and found another duncan's test that gives you p-values. The results below mirror the agricolae::duncan.test.
+
+```{r}
+require(DescTools)
+
+PostHocTest(masterAov, method = "duncan")
+```
+
+Now I will compare this to the five post hoc tests from *a priori* hypotheses.
+
+```{r}
+diet    <- factor(masterdat$Diet,labels=c("NN85", "NR40", "NR50", "NP", "RR50", "lopro")) 
+masterAov2  <- aov(Lifetime ~ diet, data=masterdat) 
+contr <- rbind("dietNR50 - dietNN85" = c(-1,0,1,0,0,0),
+               "dietNR40 - dietNR50" = c(0,1,-1,0,0,0),
+               "dietRR50 - dietNR50" = c(0,0,-1,0,1,0),
+               "dietlopro - dietNR50" = c(0,0,-1,0,0,1),
+               "dietNN85 - dietNP" =  c(1,0,0,-1,0,0))
+
+
+myComparisons <- glht(masterAov2, linfct = mcp(diet = contr))
+
+
+myp <- summary(myComparisons,test=adjusted("none")) 
+ci.tab <- confint(myComparisons, calpha = univariate_calpha()) 
+
+p <- myp$test$pfunction()
+p <- data.frame(p)
+colnames(p) <- c("P-value")
+
+pander(p, plain.ascii=TRUE)
+pander(tidy(ci.tab))
+```
+
+Testing pairwise comparisons this way, we see that there is convincing evidence for a difference between NR50/NN85 (p-value = 1.07e-14) and NN85/NP (p-value = 5.95e-05), moderate evidence for a difference between NR40/NR50 (p-value = 0.0166) and LoPro/NR50 (p-value = 0.0293), and no evidence for a difference between RR50/NR50 (p-value = 0.6223).
+
+While the p-values for two of the comparisons are slightly different (the NR50/NN85 and the NN85/NP comparisons), the other three are identical, and all five of the comparisons produce the same level of p-value and support the same conclusions
+
