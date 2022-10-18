@@ -1,0 +1,368 @@
+C---
+title: 'HW #2'
+author: "Orla O'Brien"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+<span style="color: magenta"> **General Comments [Gallagher's comments in magenta]:** Your R code, graphics and Tables were phenomenal. You must write concise statements summarizing those tabular and graphical displays. My Ph.D. advisor published in Scientific American, and they told him that their articles had two parallel but strongly interacting components: the graphs & tables and text. Each is essential to convey the story to the reader. In several of your answers, you presented mainly or only the graphical and tabular displays. I'd have you present your work on Tuesday, but you've already presented, and I need to assign new students as presenters. **Score: Basic = (5+5)/10; Supplemental = (2.3+2.4)/5;  Total points. 14.7/10** </span>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# Load in libraries
+library(Sleuth3)
+library(Sleuth2)
+library(tidyverse)
+library(cowplot)
+library(kableExtra)
+library(mosaic)
+```
+
+
+
+
+# Question 2.22: Male vs Female Intelligence
+
+First load in and name the data.
+```{r}
+dat22 <- Sleuth3::ex0222
+head(dat22)
+```
+
+Lets take a look at a box plot:
+```{r}
+ggplot(data=dat22, aes(Gender, AFQT)) +
+  geom_boxplot()
+
+```
+
+The way the data is formatted right now, it's hard to plot all the different scores together. So I'm going to reformat using pivot_longer to create one column with all the scores, and then replot the boxplots. 
+
+```{r}
+dat22 %>%
+  pivot_longer(cols=2:6, names_to="Test", values_to = "Score") %>%
+
+ggplot(aes(Gender, Score, fill=Gender)) +
+  geom_boxplot()+
+  facet_wrap(~Test) +
+  theme_bw() +
+  scale_fill_manual(breaks=c("female", "male"), 
+                    values=c("lavender", "#99d8c9")) +
+  scale_x_discrete(labels=c("Female", "Male")) +
+  labs(title="Composite and Individual AFQT Test Scores by Gender")
+
+```
+
+Now I want to perform my t-tests and show them in a table.
+
+```{r}
+
+tests <- list()
+
+
+tests[[1]] <- t.test(AFQT ~ Gender, var.equal = TRUE, data = dat22)
+tests[[2]] <-t.test(Arith ~ Gender, var.equal = TRUE, data = dat22)
+tests[[3]] <-t.test(Math ~ Gender, var.equal = TRUE, data = dat22)
+tests[[4]] <-t.test(Parag ~ Gender, var.equal = TRUE, data = dat22)
+tests[[5]] <-t.test(Word ~ Gender, var.equal = TRUE, data = dat22)
+
+results <- sapply(tests, function(x) {
+  c(x$estimate[1],
+    x$estimate[2],
+    ci.lower = x$conf.int[1],
+    ci.upper = x$conf.int[2],
+    p.value = x$p.value)
+})
+colnames(results) <- c("AFQT", "Arithmetic", "Math", "Word Knowledge", "Paragraph Comprehension")
+rownames(results) <- c("Mean Score (Female)", "Mean Score (Male)", "Confidence Interval (Upper)",
+                       "Confidence Interval (Lower)", "p-value")
+
+results
+ kbl(results, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+```
+
+
+<span style="color: magenta"> **Comments on Basic Question 2.22:** The graphics and Tables are outstanding. I'll give a bonus point for those but then take off a point. In addition to the Tables and Graphs, you must summarize in a paragraph those results. In concise sentences, you need to describe the designs (a probability-based random sample of the Nation's youth), the tests (Student's *t* tests, the p values, effect sizes, a measure of precision (usually the confidence limits) and your statistical inference. Does this study provide evidence that men are smarter than women, especially in math? The AFQT was treated by Herrenstein & Murray in their controversial book "The Bell Curve" as an IQ test, and they used the scores analyzed by binary logistic regression (Sleuth Ch 20) to justify their belief in a racial difference in IQ, more than can be accounted for by socioeconomic status of the families. The UC Berkeley Sociology Dept wrote a devastating critique of the Bell Curve methods and conclusions and reanalyzed all of the NLSY AFQT data. It is the best of many books published about 'The Bell Curve.' I'll cover more of the story when we reach Ch 20. I don't have my many Bell Curve books at my home office. **Score = 5/5.**</span>
+
+
+# Question 3.32: College Tuition 
+
+Load in and name the data
+
+```{r}
+dat32 <- Sleuth3::ex0332 
+head(dat32)
+```
+
+
+I want to make sure that I can plot things easily, so I'll pivot the data to one column.
+
+
+```{r}
+dat32_pivot <- dat32 %>% pivot_longer(cols=3:4, names_to="InOut", values_to = "Cost")
+```
+
+Now, take a look at the spread of the data
+```{r}
+dat32_pivot %>%
+  filter(Type=="Public") %>%
+  ggplot(aes(InOut, Cost, fill=InOut)) +
+  geom_boxplot() +
+  theme_bw() +
+  scale_fill_manual(breaks=c("InState", "OutOfState"), 
+                    values=c("#d95f02", "#1b9e77")) +
+  scale_x_discrete(labels=c("In State Tuition", "Out of State Tuition")) +
+  labs(x= "", y="Cost (USD)", title="Comparison of College Tuition")
+```
+
+The boxplot shows that the interquartile ranges are quite different. However, I had a hard time visualizing this so I plotted it as a histogram as well to look at the spread.
+
+```{r}
+dat32_pivot %>%
+  ggplot(aes(Cost)) +
+  geom_histogram(binwidth=2000, color="black", fill="blue") +
+  facet_grid(rows=vars(Type), cols=vars(InOut)) +
+  theme_bw()+
+  labs(y="Count", x="Cost (USD)")
+```
+
+Data are clearly not normal, so we need to do a transformation.
+
+I'll use BoxCox to see what kind of transformation I need to do.
+
+
+```{r}
+MASS::boxcox(Cost ~ Type, data=dat32_pivot,lam=seq(-1,1,.1))
+
+```
+
+
+It looks like a log transformation would be appropriate, because lambda is zero.
+
+Now I'll make box plots for the three comparisons the question asks for. I'm using cowplot to plot them together.
+
+```{r}
+
+In.V.Out <- dat32_pivot %>%
+  filter(Type=="Public") %>%
+  ggplot(aes(InOut, log(Cost), fill=InOut)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(size=10)) +
+  scale_fill_manual(breaks=c("InState", "OutOfState"), 
+                    values=c("#d95f02", "#1b9e77")) +
+  scale_x_discrete(labels=c("In State Tuition", "Out of State Tuition")) +
+labs(x= "", y="Log of Cost (USD)", title="In vs Out of State Public College Tuition")
+
+Private.V.Public <- dat32_pivot %>%
+  filter(InOut=="InState") %>%
+  ggplot(aes(Type, log(Cost), fill=Type)) +
+  geom_boxplot() + 
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(size=10)) +
+  scale_fill_manual(breaks=c("Private", "Public"), 
+                    values=c("#d95f02", "#1b9e77")) +
+  scale_x_discrete(labels=c("In State Private", "In State Public")) +
+  labs(x= "", y="Log of Cost (USD)", title="Private vs Public College In-State Tuition")
+
+Private.V.PublicOut <- dat32_pivot %>%
+  filter(InOut=="OutOfState") %>%
+  ggplot(aes(Type, log(Cost), fill=Type)) +
+  geom_boxplot() + 
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(size=10)) +
+  scale_fill_manual(breaks=c("Private", "Public"), 
+                    values=c("#d95f02", "#1b9e77")) +
+  scale_x_discrete(labels=c("Out of State Private", "Out of State Public")) +
+  labs(x= "", y="Log of Cost (USD)", title="Private vs Public College Out of State Tuition")
+
+plot_grid(In.V.Out, Private.V.Public, Private.V.PublicOut, labels = c('A', 'B', 'C'))
+```
+
+Now we want to look at the statistical summary for these three comparisons.
+
+```{r}
+
+tests32 <- list()
+t1 <- dat32_pivot %>% filter(Type=="Public") 
+t3 <- dat32_pivot %>% filter(InOut=="OutOfState")
+
+
+tests32[[1]] <- t.test(log(Cost) ~ InOut, data=t1)
+tests32[[2]] <- t.test(log(InState) ~ Type, data=dat32)
+tests32[[3]] <- t.test(log(Cost) ~ Type, data=t3)
+
+results32 <- sapply(tests32, function(x) {
+  c(x$estimate[1],
+    x$estimate[2],
+    ci.lower = x$conf.int[1],
+    ci.upper = x$conf.int[2],
+    p.value = x$p.value)
+})
+
+colnames(results32) <- c("In Vs Out of State", "Priv vs Pub (In State)","Priv vs Pub (Out Of State)" )
+rownames(results32) <- c("Mean Score (Group 1)", "Mean Score (Group 2)", "Confidence Interval (Upper)",
+                       "Confidence Interval (Lower)", "p-value")
+
+ kbl(results32, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+```
+
+The results show that there is strong evidence that out of state public school tuition is higher than in state public school tuition, and that private school tuition is higher than public school tuition when looking at either in or out of state costs.
+
+<span style="color: magenta">**Basic Problem 3.32 College Tuitions** Your answer is great, but you still should summarize the Tables with text. What were the p values, effect sizes, and confidence intervals? What statistical inference is possible with the sampling design?   **Score 5/5** </span>
+
+# Question 2.21 from Sleuth 2: Weights of Birds that Survived and Perished 
+
+Read in and check data.
+```{r}
+dat0221 <- Sleuth2::ex0221
+head(dat0221)
+```
+
+```{r}
+
+ggplot(dat0221, mapping=aes(Status, Weight, fill=Status)) +
+  geom_boxplot()+
+  theme_bw() +
+  theme(legend.position="none") +
+  scale_fill_manual(breaks=c("perished", "survived"), 
+                    values=c("#d7301f", "#fdbb84")) +
+  scale_x_discrete(labels=c("Perished", "Survived")) +
+  labs(x= "", y="Sparrow Weight", title="Weights of Sparrows that Perished or Survived During a Winter Storm")
+
+
+result21 <- favstats(Weight ~ Status, data=dat0221)
+
+
+tests21 <- list()
+
+tests21[[1]] <- t.test(Weight ~ Status, data=dat0221)
+
+Tresults21 <- sapply(tests21, function(x) {
+  c(x$estimate[1],
+    x$estimate[2],
+    ci.lower = x$conf.int[1],
+    ci.upper = x$conf.int[2],
+    p.value = x$p.value)
+})
+
+kbl(result21, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+
+kbl(Tresults21, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+```
+
+<span style="color: magenta">**Supplemental Problem 2.21 Bumpus Sparrows**  As in the previous problems, you didn't write an analysis based on your wonderful tables and graphs. Use the Sleuth summaries at the end of the case studies as a paradigm. They always report the effect size, the test, the p value, and a measure of the error of the estimate, usually the 95% CI. They then make a statistical inference about the data. In this supplemental problem, Bumpus used the sparrow data as evidence for Darwinian selection. Do the data support this conclusion? **Score 2.3/2.5** </span>
+
+# Question 3.31 from Sleuth 2: Iron Supplementation
+
+Load in and check the data
+```{r}
+dat0331 <- Sleuth2::ex0331
+head(dat0331)
+```
+
+Check the spread to see if we need to transform
+```{r}
+a <- ggplot(dat0331, mapping=aes(Supplement,Iron, fill=Supplement)) +
+  geom_boxplot()+
+  scale_fill_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(y= "Percent Iron Retained", x="")
+
+b <- ggplot(dat0331, mapping=aes(Iron, fill=Supplement, linetype = Supplement, color=Supplement)) +
+  geom_histogram(position="identity", alpha=.5, binwidth = .5) +
+  scale_fill_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) +
+  scale_color_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) + 
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(x= "Percent Iron Retained", y="Count")
+
+plot_grid(a, b, ncol=1, labels = c('A', 'B'))
+```
+
+
+
+There are some outliers here that maybe we should get rid of.
+```{r}
+dat0331 <- subset(dat0331, (Supplement=="Fe3" & Iron < 7.5) | (Supplement=="Fe4" & Iron < 10))
+
+a <- ggplot(dat0331, mapping=aes(Supplement,Iron, fill=Supplement)) +
+  geom_boxplot()+
+  scale_fill_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(y= "Percent Iron Retained", x="")
+
+b <- ggplot(dat0331, mapping=aes(Iron, fill=Supplement, linetype = Supplement, color=Supplement)) +
+  geom_histogram(position="identity", alpha=.5, binwidth = .5) +
+  scale_fill_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) +
+  scale_color_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) + 
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(x= "Percent Iron Retained", y="Count")
+
+plot_grid(a, b, ncol=1, labels = c('A', 'B'))
+```
+
+This looks better, but I still think we need a transformation. I'll use BoxCox to see what type of transformation is warranted.
+
+```{r}
+MASS::boxcox(Iron ~ Supplement, data=dat0331,lam=seq(-1,2,.1))
+```
+
+Looks like a square root transformation is suggested (lambda is roughly 0.5).
+Now we'll view the data again, do our T test, and report the statistical summary.
+..
+```{r}
+ggplot(dat0331, mapping=aes(Supplement,sqrt(Iron), fill=Supplement)) +
+  geom_boxplot()+
+  scale_fill_manual(values=c("Fe3" = "#238b45", "Fe4" = "#4292c6")) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(y= "Percent Iron Retained (Square Root Transformed)", x="")
+```
+
+```{r}
+t.test(sqrt(Iron) ~ Supplement,  data=dat0331)
+
+results31 <- favstats(sqrt(Iron) ~ Supplement,  data=dat0331)
+
+
+
+
+tests31 <- list()
+
+tests31[[1]] <- t.test(sqrt(Iron) ~ Supplement,  data=dat0331)
+
+Tresults31 <- sapply(tests31, function(x) {
+  c(x$estimate[1],
+    x$estimate[2],
+    ci.lower = x$conf.int[1],
+    ci.upper = x$conf.int[2],
+    p.value = x$p.value)
+})
+
+kbl(results31, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+
+kbl(Tresults31, booktabs = T, longtable = T, caption = "Statistical Summary", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 9)
+```
+
+
+<span style="color: magenta">**Supplemental Problem 3.31 Fe(III) & Fe(IV)** In the previous problems, a statistically literate reader could see the story in the tables without a text summary. In this study, a text description of the problem, statistical test including the square root transformation suggested by Box-Cox, the effect size properly back-transformed from the square root to the natural scale 2^effect with CI 2^lowerCI, 2^upperCI, with mention that it is the ratio of the back transformed means that is being reported. For a log transform, which your Box-Cox shows is not as appropriate as the square root transform, the back-transformed mean is the geometric mean. With the square root transform, you have to say something like, Fe(IV) is retained x.x times more than ferric [Fe(III)] iron. There should be a name for the back-transformed variable, but I don't know it. This web site discusses it and the back-transformation but doesn't name the back transformed random variable: https://www.biostathandbook.com/transformation.html    **Score 2.4/2.5** </span>
+
+
+
+
+
+
+
+
+
+
