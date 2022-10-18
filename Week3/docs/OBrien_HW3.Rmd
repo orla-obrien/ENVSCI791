@@ -1,0 +1,292 @@
+---
+title: 'HW #3'
+author: "Orla O'Brien"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# Load in libraries
+library(Sleuth3)
+library(Sleuth2)
+library(tidyverse)
+library(cowplot)
+library(mosaic)
+library(coin)
+library(asht)
+```
+
+
+
+
+# Question 4.28: Darwin Data 
+## Are cross fertilized plants superior to self-fertilized plants?
+
+
+First load in and name the data.
+```{r}
+dat28 <- Sleuth3::ex0428
+head(dat28)
+```
+
+### Draw a histogram of the differences
+```{r warning=FALSE}
+ggplot(dat28) +
+  geom_histogram(aes(Cross-Self),fill="#4292c6", binwidth = .5, alpha=.5, color="black") +
+  theme_bw() +
+  xlim(0, 10) +
+  labs(x= "Difference in plant height (inches)", y="Count")
+
+```
+
+### Find a two-sided p-value for the hypothesis using a paired t-test
+
+```{r}
+result <- t.test(dat28$Cross, dat28$Self, paired = TRUE)
+
+print(result$p.value)
+```
+
+### Find a 95% confidence interval for the additive treatment effect
+
+
+```{r}
+print(result$conf.int) 
+
+```
+
+
+### Is there any indication from the plot that the paired t-test is inappropriate?
+
+```{r}
+dat28_pivot <- dat28 %>% pivot_longer(cols=1:2, names_to="Treatment", values_to = "Height")
+
+ggplot(dat28_pivot, mapping = aes(Height, fill=Treatment, linetype = Treatment, color=Treatment)) +
+  geom_histogram(position="dodge", alpha=.5, binwidth = .5) +
+  scale_fill_manual(values=c("Cross" = "#4292c6", "Self" = "#238b45")) +
+  scale_color_manual(values=c("Cross" = "#4292c6", "Self" = "#238b45")) + 
+  theme_bw() +
+  labs(x= "Plant height (inches)", y="Count")
+```
+
+Based on both a histogram of heights and a histogram of difference in heights, I would say that the differences are not normally distributed, and thus a t-test is not appropriate.
+
+
+
+
+### Find a two-sided p-value for the hypothesis using the signed-rank test.
+
+
+```{r}
+result <-wilcox.test(dat28$Cross, dat28$Self, paired=TRUE, alternative = "two.sided", exact=TRUE, conf.int = TRUE, conf.level = .95) 
+
+result$p.value
+result$conf.int
+result$estimate
+
+```
+
+### Conclusions
+
+A paired t-test seemed to be appropriate because the data was comparing growth of plants under two different treatment (pollination) regimes. The data are continuous and the observations are independent of each other. However, the data do not meet the assumption that the differences between groups be normally distributed. Therefore, a signed-rank test was used. This test does not assume any distribution, and is more appropriate. The results of this test showed suggestive evidence of cross pollination resulting in plants growing higher (p-value = 0.04, 95% confidence interval 0.50 - 5.19).
+
+```{r}
+dat28_pivot <- dat28 %>% pivot_longer(cols=1:2, names_to="Treatment", values_to = "Height")
+
+dat28_pivot %>%
+  ggplot(aes(Treatment, Height, fill=Treatment)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none")+
+  scale_fill_manual(breaks=c("Cross", "Self"), 
+                    values=c("#238443", "#d9f0a3")) +
+  scale_x_discrete(labels=c("Cross-Pollinated", "Self-Pollinated")) +
+  ylim(0, 25) +
+  labs(x= "", y="Height (Inches)", title="Effect of Pollination Type on Plant Height")
+```
+
+
+# Question 4.32: Therapeutic Marijuana
+## Does marijuana treatment reduce the frequency of vomiting episodes?
+
+Load in our data set.
+```{r}
+
+dat32 <- Sleuth3::ex0432
+head(dat32)
+```
+
+
+```{r}
+dat32_pivot <- dat32 %>% pivot_longer(cols=2:3, names_to="Treatment", values_to = "Number")
+
+dat32_pivot %>%
+  ggplot(aes(Treatment, Number, fill=Treatment)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none")+
+  scale_fill_manual(breaks=c("Marijuana", "Placebo"), 
+                    values=c("#238443", "#fee8c8")) +
+  scale_x_discrete(labels=c("Marijuana", "Placebo")) +
+  labs(x= "", y="Number of Vomiting Episodes", title="The Effect of Marijuana as an Antiemetic in Cancer Patients")
+```
+
+This boxplot shows that the data need to be log-transformed. 
+
+
+```{r}
+dat32_pivot %>%
+  ggplot(aes(Treatment, log(Number), fill=Treatment)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none")+
+  scale_fill_manual(breaks=c("Marijuana", "Placebo"), 
+                    values=c("#238443", "#fee8c8")) +
+  scale_x_discrete(labels=c("Marijuana", "Placebo")) +
+  labs(x= "", y="Number of Vomiting Episodes (Log Transformed)", title="The Effect of Marijuana as an Antiemetic in Cancer Patients")
+```
+
+This looks much better, so I will proceed with the analysis using a log transformation.
+
+```{r}
+dat32 <- dat32 %>%
+  group_by(Subject) %>%
+  mutate(diff = (Placebo - Marijuana )) %>%
+  mutate(logDiff = log(diff + 1)) 
+
+head(dat32)
+```
+
+Note that some of the differences are zero, so I need to add one to take the log. Once log transformed, they still end up being zero. This means I need to use a version  of the Wilcoxon signed rank test that allows for zeros (ties). The package asht uses a Pratt modification to deal with this.
+
+
+```{r}
+result <- wsrTest((dat32$logDiff), conf.int = TRUE, conf.level = 0.95)
+result
+```
+
+Now we need to back transform the confidence intervals and effect size.
+```{r}
+exp(result$estimate)
+exp(2.54) # Lower confidence interval
+exp(3.85) # Upper confidence interval
+
+```
+
+
+The results of the signed rank test show convincing evidence (p = .0002) that marijuana works as an antiemetic for cancer patients. Patients undergoing this treatment were 24.5 times less likely (95% confidence interval 12.7 - 47.0) to experience episodes of vomiting than when they received the placebo treatment.
+
+# Question 4.30 Sleuth 2: Sunlight protection factor
+## What is the SPF value of the sunscreen used in the study?
+
+```{r}
+dat30 <- Sleuth2::ex0430
+head(dat30)
+```
+
+```{r}
+dat30_pivot <- dat30 %>% pivot_longer(cols=1:2, names_to="Treatment", values_to = "Time")
+dat30_pivot %>%
+  ggplot(aes(Treatment, Time, fill=Treatment)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none") +
+  scale_fill_manual(breaks=c("Control", "Sunscreen"), 
+                    values=c("#b30000", "#fed976")) +
+  labs(x= "", y="Time (Minutes)", title="Effect of Sunscreen on Sun Tolerance")
+```
+
+Looking at the data, we know we need to do a log transformation.
+
+Here are the data shown again, once transformed.
+```{r}
+dat30_pivot %>%
+  ggplot(aes(Treatment, log(Time), fill=Treatment)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="none") +
+  scale_fill_manual(breaks=c("Control", "Sunscreen"), 
+                    values=c("#b30000", "#fed976")) +
+  labs(x= "", y="Time (log of Minutes)", title="Effect of Sunscreen on Sun Tolerance")
+```
+
+```{r}
+result <- wsrTest(log(dat30$Sunscreen), log(dat30$Control), conf.int = TRUE, conf.level = 0.95)
+result
+
+```
+We can use a Wilcoxon Signed-Rank test here. This gives us an exact p-value of .0002. 
+
+Then we need to back transform our estimate and confidence intervals.
+
+
+```{r}
+est <- exp(1.99)
+
+CI.l <- exp(1.53)
+CI.u <- exp(2.51)
+
+est # the estimate of SPF
+
+CI.l # lower 95% Confidence Interval
+CI.u # upper 95% Confidence Interval
+```
+
+### Conclusions
+The SPF value of the sunscreen being tested is 7.3 (95% confidence interval 4.6-12.3). This means people using this sunscreen can tolerate the sun 7.3 times as long as when they are not wearing it. The p-value of 0.0004 provided convincing evidence that the sunscreen increased a person's tolerance to sunlight. There are however a few obvious confounding variables. One is that tolerance to the sun may not increase linearly with skin tone: people with lighter skin may have much less tolerance to sun relatively speaking than people with darker skin. Another confounding variable is that they seem to have tested the sunscreen AFTER already exposing people to the sun - this makes me think that people's tolerance was artifically lower than it should have been during the treatment.
+
+
+## Question 4.31 Sleuth 2: Effect of group therapy on survival of breast cancer patients 
+### Does group therapy increase survival time for cancer patients
+
+
+```{r}
+dat31 <- Sleuth2::ex0431
+head(dat31)
+```
+
+Lets view a boxplot of the data
+
+```{r}
+dat31 %>%
+  ggplot(aes(Group, Survival, fill=Group)) +
+  geom_boxplot() +
+  theme_bw() +
+  scale_fill_manual(breaks=c("Control", "Therapy"), 
+                    values=c("#bdbdbd", "#c994c7")) +
+  scale_x_discrete(labels=c("Control", "Therapy")) +
+  labs(x= "", y="Survival Time (Months)", title="Effect of Therapy on Cancer Survival")
+```
+
+
+Need to do a log transform to deal with the variance in survival time
+
+```{r}
+dat31 %>%
+  ggplot(aes(Group, log(Survival), fill=Group)) +
+  geom_boxplot() +
+  theme_bw() +
+  scale_fill_manual(breaks=c("Control", "Therapy"), 
+                    values=c("#bdbdbd", "#c994c7")) +
+  scale_x_discrete(labels=c("Control", "Therapy")) +
+  labs(x= "", y="Survival Time (log of Months)", title="Effect of Therapy on Cancer Survival")
+```
+
+
+Because the data is censored, I used a rank sum test (as in the cognitive load test). After performing the test, I had to back transform the intervals and the estimate.
+
+```{r}
+wilcox.test(log(Survival) ~ Group, exact=FALSE, correct=TRUE, 
+            alternative="two.sided", conf.int=TRUE, data=dat31)  # Use 2-sided to get confidence int.  
+
+exp(-.318)
+exp(-0.981)
+exp(0.251)
+summary(dat31)
+
+```
+
+### Conclusions
+
+Surprisingly, it seemed like therapy did not extend the life of the patient (p value 0.3). While there were patients in therapy groups that lived longer, I believe that there is a much larger spread in the data of that group that accounts for this. The effect size was 0.7 with a 95% confidence interval of 0.38 - 1.3. The interval crossing over 1 means that there is no convincing evidence therapy either extends or does not extend the life of the patient.
