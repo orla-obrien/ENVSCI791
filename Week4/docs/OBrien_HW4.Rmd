@@ -1,0 +1,395 @@
+---
+title: "O'Brien Homework 4"
+author: "Orla O'Brien"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(Sleuth2)
+library(Sleuth3)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(multcomp)
+library(pander)
+library(RColorBrewer)
+library(BHH2)
+```
+
+## Question 5.23: Was T-rex warm blooded?
+
+### The question asks if there is a difference in the means of oxygen isotopic composition in 12 different T rex bones.
+
+Load in the data
+
+```{r}
+
+dat23 <- Sleuth3::ex0523
+head(dat23)
+```
+
+Lets take a look at the spread of the data.
+
+```{r}
+print("First I want to reorder the data so it goes sequentially from Bone 1 to Bone 12.")
+
+dat23$Bone <- factor(dat23$Bone,levels=c("Bone1", "Bone2", "Bone3", "Bone4", "Bone5", "Bone6", "Bone7",
+                                         "Bone8", "Bone9", "Bone10", "Bone11", "Bone12"), 
+                     labels = c("Rib 16", "Gastralia", "Gastralia", "Dorsal Vertebra", "Dorsal Vertebra", "Femur", "Tibia",
+                                "Metatarsal", "Phalange", "Proximal caudal", "Mid-caudal", "Distal caudal"
+                                                                                                     ))
+
+print("Then I wanted to use a color ramp, but most don't have 12 levels so I did a little finagling.")
+
+colourCount = length(unique(dat23$Bone))
+getPalette = colorRampPalette(brewer.pal(9, "PuBuGn"))
+
+dat23 %>%
+  ggplot(aes(Bone, Oxygen, fill=Bone)) +
+  geom_boxplot() +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_bw() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank()) +
+  ylab("Oxygen Isotopic Composition")
+
+
+```
+
+It seems a little all over the place, but lets move forward.
+
+```{r}
+aov23 <- aov(Oxygen ~ Bone, data=dat23)
+
+plot(aov23, which =1)
+print("The residuals look ok - there is some variation but not too much.")
+summary(aov23)
+print("The summary of the ANOVA shows that there is a difference in the means of the bones.")
+```
+
+To find out where the differences are, we can run a pairwise t-test. Since I'm just interested in knowing where there are differences in *any* of the bones, I'll run all the tests and use a Bonferroni correction.
+
+```{r}
+
+pt <- pairwise.t.test(dat23$Oxygen, dat23$Bone, p.adjust.method = "bonferroni")
+
+pt.tab <- tidy(pt) %>%
+  filter(p.value < 0.05) %>%
+  rename(Bone_1 = group1, Bone_2 = group2)
+
+pt.tab <- as.data.frame(pt.tab)
+
+ kbl(pt.tab, booktabs = T, longtable = T, caption = "Table 1. Difference in Oxygen in Bones", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 11)
+ 
+
+```
+
+I can also get confidence intervals for the difference in means.
+
+```{r}
+  myComparisons <- glht(aov23)
+  summary(myComparisons,test=adjusted("free"))
+ci.tab <-  confint(myComparisons, calpha = adjusted_calpha())
+
+
+pander(tidy(ci.tab))
+
+```
+
+These confidence intervals are based on using "Rib 16" as the intercept.
+
+In conclusion, there is evidence that the **means** of some of the bones are different. The ANOVA showed convincing evidence (p = .000001) that there was a difference in means. A pairwise t-test showed that there were seven pairs of bones that had convincing evidence of differences in means, and one pairing that suggested a difference but was not conclusive (see Table 1). However, I will note that these data are not sufficient to answer the question of whether or not *Tyrannasaurus rex* was warm blooded. Repeated samples from bones from one individual constitutes psuedoreplication. While we can answer whether or not temperature was uniform within this individual, no conclusion about all *Tyrannasaurus rex* can be inferred.
+
+
+
+## Question 5.25 Education and future income 
+  
+### How strong is the evidence that at least one of the five population distributions is different from the others?
+  
+Load in the data
+```{r}
+dat25 <- Sleuth3::ex0525
+
+head(dat25)
+```
+  
+
+
+View data
+
+```{r}
+dat25$Educ <- factor(dat25$Educ, levels = c("<12", "12", "13-15", "16", ">16"), 
+                     labels = c("Less_than_12", "12", "1315", "16", "More_than_16"))
+
+dat25%>%
+  ggplot(aes(Educ, Income2005, fill=Educ)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "BuPu") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  xlab("Education Level") +
+  ylab("Income") +
+  scale_y_continuous(labels = scales::dollar)
+```
+
+So I can see from this boxplot that I'll need to do a log transformation. But just to double check, we can look at the residuals of the data.
+
+```{r}
+aov25 <- aov(Income2005 ~ Educ, data = dat25)
+plot(aov25, which=1)
+```
+
+The residuals plot shows the "trumpet" shape, so I will go ahead with the log transformation.
+
+
+```{r}
+dat25%>%
+  ggplot(aes(Educ, log(Income2005), fill=Educ)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "BuPu") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  xlab("Education Level") +
+  ylab("Income (Log of Dollars") 
+```
+
+This looks better, so I'll go ahead with my ANOVA.
+
+```{r}
+aov25 <- aov(log(Income2005) ~ Educ, data = dat25)
+
+plot(aov25, which=1)
+print("Residuals look much better here.")
+aovsum <- summary(aov25)
+
+pander(summary(aov25))
+
+```
+
+Above is the summary of my ANOVA.
+
+
+
+```{r}
+myComparisons <- glht(aov25, linfct = c("Educ12 = 0", 
+                       "Educ1315 = 0",
+                       "Educ16 = 0",
+                       "EducMore_than_16 = 0"))
+
+myComparisons <- glht(aov25)
+summary(myComparisons,test=adjusted("free")) 
+ci.tab <- confint(myComparisons, calpha = adjusted_calpha())
+
+
+pander(tidy(ci.tab))
+```
+
+Summary of some selected pairwise tests (each education group against the lowest group). Note that these are still on the log scale.
+
+This table shows the estimated slope of the line between the reference group (less than 12 years) and each group tested, as well as the confidence intervals around each slope value. In all cases, the slope is greater than zero, and the slope is larger for each comparison, which tells us that income increases with education level.
+
+
+### By how many dollars or by what percent does the mean or median for each of the last four categories exceed that of the next lowest category?
+
+
+To do this, I'm just going to compute the difference in mean incomes, and show the results in a table.
+
+```{r}
+
+avg.income <- dat25 %>%
+  group_by(Educ) %>%
+  mutate(averg = mean(Income2005)) %>%
+  distinct(averg, .keep_all = TRUE)
+
+
+avg.income <- avg.income %>%
+  arrange(averg)
+
+a1 <- avg.income$averg[2] - avg.income$averg[1]
+a2 <- avg.income$averg[3] - avg.income$averg[2]
+a3 <- avg.income$averg[4] - avg.income$averg[3]
+a4 <- avg.income$averg[5] - avg.income$averg[4]
+```
+```{r}
+
+res.list <- list()
+res.list[[1]] <- a1
+res.list[[2]] <- a2
+res.list[[3]] <- a3
+res.list[[4]] <- a4
+
+res.list <- as.data.frame(res.list)
+colnames(res.list) <- c("Between 12 and less than 12", "Between 13-15 and 12", "Between 16 and 13-15", "Between 16 and more than 16")
+rownames(res.list) <- c("Difference in Dollars")
+
+ kbl(res.list, booktabs = T, longtable = T, caption = "Difference in Mean Incomes", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 11)
+
+```
+
+
+
+## Question 5.24 Sleuth 2: Vegetarians and Zinc
+
+### What evidence is there that pregnant vegetarians tend to have lower zinc levels than pregnant nonvegetarians?
+
+```{r}
+
+dat24 <- Sleuth2::ex0524
+head(dat24)
+
+```
+
+
+```{r}
+dat24%>%
+  ggplot(aes(Group, Zinc, fill=Group)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "GnBu") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  xlab("") +
+  ylab("Zinc Level (Micrograms per gram") +
+  scale_x_discrete(labels = c("Pregnant, Not Veg", "Pregnant, Veg", "Not Pregnant, Not Veg"))
+```
+
+It's obvious looking at the boxplots that we need to do a log transformation.
+
+
+```{r}
+dat24%>%
+  ggplot(aes(Group, log(Zinc), fill=Group)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "GnBu") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  xlab("") +
+  ylab("Zinc Level (Log of micrograms per gram") +
+  scale_x_discrete(labels = c("Pregnant, Not Veg", "Pregnant, Veg", "Not Pregnant, Not Veg"))
+```
+
+Now we can run our ANOVA.
+
+```{r}
+aov24 <- aov(log(Zinc) ~ Group, data=dat24)
+
+plot(aov24, which=1)
+```
+
+The residuals here look fine.
+
+
+```{r}
+summary(aov24)
+pander(summary(aov24))
+```
+
+However, looking at the summary of the ANOVA, there is no evidence that the three groups of women are different (p value = 0.98). I can make a summary table showing average zinc level and cofidence interval as well.
+
+```{r}
+myComparisons <- glht(aov24)
+summary(myComparisons,test=adjusted("free"))
+confint(myComparisons, calpha = adjusted_calpha())
+
+PregNonVeg <- list(exp(5.18), exp(5.05), exp(5.31))
+PregVeg <- list(exp(sum(5.18, -0.01)), exp(sum(5.05, -0.17)), exp(sum(5.31, 0.15)))
+NonPregNonVeg <- list(exp(sum(5.18, 0)), exp(sum(5.05, -0.19)), exp(sum(5.31, 0.19)))
+
+
+
+res.tab <- rbind(PregNonVeg, PregVeg, NonPregNonVeg)
+colnames(res.tab) <- c("Estimate", "Lower CI", "Upper CI")
+
+
+ kbl(res.tab, booktabs = T, longtable = T, caption = "Difference in Zinc Levels", linesep = "") %>%
+ kable_styling(latex_options = c("hold_position", "repeat_header"), full_width = F, font_size = 11)
+```
+
+
+
+There is no evidence that pregnant vegetarians have lower zinc levels - the p value of the ANOVA was very high, and so the three groups are not different.
+
+
+
+## Question 5.25 Sleuth 2: Duodenal ulcers
+
+```{r}
+setwd("~/R_Work_Directory/UMB_Classes/ENVSCI791/Week4/data")
+dat0525 <- read.csv("ex0525_2nd.csv", head=T)
+
+head(dat0525)
+```
+
+
+
+```{r}
+dat0525%>%
+  ggplot(aes(Diagnosis, CCK, fill=Diagnosis)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Oranges") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  ylab("CCK Level") 
+```
+
+
+### Describe the difference in distribution of CCK activity for subjects with gallstones and for healthy subjects
+
+### Describe the difference in the distribution of CCK activity for subjects with ulcers, and for healthy subjects.
+
+```{r}
+dat0525%>%
+  ggplot(aes(CCK, color=Diagnosis, fill=Diagnosis)) +
+  geom_density(alpha=.5) +
+  scale_fill_brewer(palette="Dark2") +
+  scale_color_brewer(palette="Dark2") + 
+  theme_bw()
+```
+
+We can see that for both the gallstone and the ulcer group, there is overlap with the control group, but the peak in density of CCK values falls outside the range of the control group.
+
+
+
+Because of the large outlier in the ulcer group, I'm going to choose to do a Kruskal-Wallis instead of a traditional ANOVA.
+
+```{r}
+kw <- kruskal.test(CCK ~ Diagnosis, data=dat0525)
+
+p <- round(kw$p.value, digits=4)
+
+
+```
+
+The results of the Kruskal-Wallis test provide strong evidence that there is a difference in CCK level between the groups. The p-value was `r p`, with a chi-squared statistic of 13.9 and two degrees of freedom.
+
+
+
+```{r}
+pairwise.wilcox.test(dat0525$CCK, dat0525$Diagnosis, conf.int=T, p.adjust.method = "bonferroni")
+
+```
+
+The pairwise post-hoc tests show that there is evidence that there is a difference in CCK values for both the gallstone and the ulcer group *from* the control, but not between each of the experimental groups.
+
+
+
+## Master Problem: Generate graphical ANOVA for Education and Future Income ####
+
+```{r}
+anovaPlot(aov25, stacked = TRUE, base = TRUE, axes = TRUE,
+          faclab = TRUE, labels = TRUE, cex = par("cex"),
+          cex.lab = par("cex.lab"))
+```
+
+
+
+
+
+
+
+
+
